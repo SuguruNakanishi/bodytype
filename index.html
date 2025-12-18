@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>体型の好み診断（8タイプランキング）</title>
+  <style>
+    :root { --gap: 10px; --radius: 16px; }
+    body{
+      margin:0; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif;
+      background:#0b0c10; color:#e9eef6;
+    }
+    header{
+      padding:16px 14px 6px;
+    }
+    h1{ font-size:18px; margin:0 0 6px; }
+    p{ margin:0; opacity:.85; font-size:13px; line-height:1.5; }
+    .wrap{ padding: 10px 14px 18px; max-width: 520px; margin:0 auto; }
+    .progress{
+      margin:10px 0 12px; font-size:13px; opacity:.9;
+      display:flex; justify-content:space-between; align-items:center;
+    }
+    .grid{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--gap);
+    }
+    .card{
+      background:#121521;
+      border:1px solid rgba(255,255,255,.08);
+      border-radius: var(--radius);
+      padding:12px;
+      min-height:112px;
+      position:relative;
+      -webkit-tap-highlight-color: transparent;
+      user-select:none;
+    }
+    .card:active{ transform: scale(.99); }
+    .label{
+      font-weight:700; font-size:14px; margin-bottom:6px;
+    }
+    .meta{ font-size:12px; opacity:.85; }
+    .rankBadge{
+      position:absolute; top:10px; right:10px;
+      width:30px; height:30px; border-radius: 999px;
+      display:flex; align-items:center; justify-content:center;
+      background: rgba(255,255,255,.08);
+      border:1px solid rgba(255,255,255,.12);
+      font-weight:800;
+    }
+    .chosen{
+      outline:2px solid rgba(120,220,255,.35);
+      background: linear-gradient(180deg, rgba(120,220,255,.10), rgba(255,255,255,.03));
+    }
+    .actions{
+      display:flex; gap:10px; margin-top:12px;
+    }
+    button{
+      flex:1;
+      border:none; border-radius: 14px;
+      padding:12px 12px;
+      font-weight:700;
+      background:#1e2436; color:#e9eef6;
+    }
+    button.primary{ background:#2b6ef6; }
+    button:disabled{ opacity:.45; }
+    .result{
+      margin-top:14px;
+      background:#121521;
+      border:1px solid rgba(255,255,255,.08);
+      border-radius: var(--radius);
+      padding:12px;
+    }
+    .result h2{ font-size:15px; margin:0 0 8px; }
+    .result .small{ font-size:12px; opacity:.85; line-height:1.6; }
+    .list{
+      margin:10px 0 0; padding:0 0 0 18px; font-size:13px; line-height:1.7;
+    }
+    .note{ margin-top:10px; font-size:12px; opacity:.75; }
+    .ad{
+      margin-top:14px;
+      background: rgba(255,255,255,.05);
+      border: 1px dashed rgba(255,255,255,.18);
+      border-radius: var(--radius);
+      padding:12px;
+      font-size:12px;
+      opacity:.85;
+      text-align:center;
+    }
+  </style>
+</head>
+<body>
+  <header class="wrap">
+    <h1>体型の好み診断（8タイプを好きな順にタップ）</h1>
+    <p>8つを「好きな順」に1〜8で決めると、あなたの嗜好傾向を表示します。</p>
+  </header>
+
+  <main class="wrap">
+    <div class="progress">
+      <div>選択：<span id="count">0</span> / 8</div>
+      <div>今の順位：<b id="nextRank">1</b>番</div>
+    </div>
+
+    <section class="grid" id="grid"></section>
+
+    <div class="actions">
+      <button id="resetBtn">リセット</button>
+      <button class="primary" id="shareBtn" disabled>結果を共有</button>
+    </div>
+
+    <section class="result" id="resultBox" style="display:none;">
+      <h2>あなたの結果</h2>
+      <div class="small" id="summary"></div>
+      <ol class="list" id="rankingList"></ol>
+      <div class="note">※これは娯楽用の簡易診断です。好みは日や状況で変わります。</div>
+    </section>
+
+    <!-- 将来ここにアフィリエイトバナーを貼れる -->
+    <div class="ad">
+      （将来の広告枠）<br/>
+      アクセス増えたらここにアフィリエイトバナーを設置できます
+    </div>
+  </main>
+
+<script>
+  // 8タイプ定義：背(高/低) × 体型(激痩せ/痩せ/太/激太)
+  const TYPES = [
+    { id:"T-激痩せ", height:"高い", body:"激痩せ", title:"背が高い × 激痩せ" },
+    { id:"T-痩せ",   height:"高い", body:"痩せ",   title:"背が高い × 痩せ" },
+    { id:"T-太",     height:"高い", body:"太",     title:"背が高い × 太" },
+    { id:"T-激太",   height:"高い", body:"激太",   title:"背が高い × 激太" },
+    { id:"S-激痩せ", height:"低い", body:"激痩せ", title:"背が低い × 激痩せ" },
+    { id:"S-痩せ",   height:"低い", body:"痩せ",   title:"背が低い × 痩せ" },
+    { id:"S-太",     height:"低い", body:"太",     title:"背が低い × 太" },
+    { id:"S-激太",   height:"低い", body:"激太",   title:"背が低い × 激太" },
+  ];
+
+  // 状態：id -> rank
+  const state = new Map();
+
+  const grid = document.getElementById("grid");
+  const countEl = document.getElementById("count");
+  const nextRankEl = document.getElementById("nextRank");
+  const resetBtn = document.getElementById("resetBtn");
+  const shareBtn = document.getElementById("shareBtn");
+  const resultBox = document.getElementById("resultBox");
+  const summary = document.getElementById("summary");
+  const rankingList = document.getElementById("rankingList");
+
+  function nextRank(){
+    return state.size + 1;
+  }
+
+  function render(){
+    grid.innerHTML = "";
+    TYPES.forEach(t => {
+      const rank = state.get(t.id);
+      const card = document.createElement("div");
+      card.className = "card" + (rank ? " chosen" : "");
+      card.innerHTML = `
+        <div class="rankBadge">${rank ? rank : "・"}</div>
+        <div class="label">${t.title}</div>
+        <div class="meta">背：${t.height}<br/>体型：${t.body}</div>
+      `;
+      card.addEventListener("click", () => onTap(t.id));
+      grid.appendChild(card);
+    });
+
+    countEl.textContent = String(state.size);
+    nextRankEl.textContent = String(nextRank());
+    const done = state.size === 8;
+    shareBtn.disabled = !done;
+    resultBox.style.display = done ? "block" : "none";
+    if(done) renderResult();
+  }
+
+  function onTap(id){
+    if(state.has(id)){
+      // 取り消し：その順位以降を詰める
+      const removedRank = state.get(id);
+      state.delete(id);
+      for(const [k,v] of Array.from(state.entries())){
+        if(v > removedRank) state.set(k, v-1);
+      }
+    }else{
+      if(state.size >= 8) return;
+      state.set(id, nextRank());
+    }
+    persistToUrl();
+    render();
+  }
+
+  function renderResult(){
+    // rank順に並べる
+    const ordered = TYPES
+      .map(t => ({...t, rank: state.get(t.id)}))
+      .sort((a,b) => a.rank - b.rank);
+
+    // 上位の傾向ざっくり（例：背の好み、体型の好み）
+    const top3 = ordered.slice(0,3);
+    const heightPref = top3.filter(x=>x.height==="高い").length >= 2 ? "背が高い寄り" :
+                       top3.filter(x=>x.height==="低い").length >= 2 ? "背が低い寄り" : "背はどちらもOK";
+    const bodyScore = (x)=>{
+      if(x.body==="激痩せ") return 0;
+      if(x.body==="痩せ") return 1;
+      if(x.body==="太") return 2;
+      return 3; // 激太
+    };
+    const avg = top3.reduce((s,x)=>s+bodyScore(x),0)/3;
+    const bodyPref = avg < 0.8 ? "細身（激痩せ〜痩せ）寄り" :
+                     avg < 1.8 ? "中間（痩せ〜太）寄り" :
+                     avg < 2.6 ? "ふくよか（太）寄り" : "かなりふくよか（激太）寄り";
+
+    summary.innerHTML = `
+      <b>上位傾向：</b>${heightPref} / ${bodyPref}<br/>
+      <span class="small">（上位3つの選択から簡易推定）</span>
+    `;
+
+    rankingList.innerHTML = ordered.map(x => `<li>${x.title}</li>`).join("");
+  }
+
+  function reset(){
+    state.clear();
+    persistToUrl(true);
+    render();
+  }
+
+  // URLに結果を埋め込む（共有用）：?r=T-痩せ,T-太,... の順番
+  function persistToUrl(clear=false){
+    const url = new URL(location.href);
+    if(clear){
+      url.searchParams.delete("r");
+    }else{
+      const orderedIds = Array.from(state.entries())
+        .sort((a,b)=>a[1]-b[1])
+        .map(([id])=>id);
+      url.searchParams.set("r", orderedIds.join(","));
+    }
+    history.replaceState(null, "", url.toString());
+  }
+
+  // URLから復元（共有リンクを踏んだ時）
+  function loadFromUrl(){
+    const url = new URL(location.href);
+    const r = url.searchParams.get("r");
+    if(!r) return;
+    const ids = r.split(",").filter(Boolean);
+    state.clear();
+    ids.forEach((id, idx) => {
+      if(TYPES.some(t=>t.id===id)) state.set(id, idx+1);
+    });
+  }
+
+  async function share(){
+    const done = state.size === 8;
+    if(!done) return;
+    const text = "体型の好み診断（8タイプランキング）";
+    const shareUrl = location.href;
+
+    // Web Share API（スマホで共有UIが出る）
+    if(navigator.share){
+      try{
+        await navigator.share({ title: text, text, url: shareUrl });
+        return;
+      }catch(e){}
+    }
+    // fallback: クリップボードへ
+    try{
+      await navigator.clipboard.writeText(shareUrl);
+      alert("リンクをコピーしました");
+    }catch(e){
+      prompt("このリンクをコピーして共有してください", shareUrl);
+    }
+  }
+
+  resetBtn.addEventListener("click", reset);
+  shareBtn.addEventListener("click", share);
+
+  loadFromUrl();
+  render();
+</script>
+</body>
+</html>
